@@ -51,15 +51,22 @@ def notify(forecast):
     day = datetime.strptime(forecast['date'], '%Y-%m-%d').strftime('%A')
     amount = forecast['amount'] or 0
     message = f"{day}: {forecast['probability']}% chance, {amount:.2f} in expected."
-    requests.post(
-        f'https://ntfy.sh/{NTFY_TOPIC}',
-        data=message.encode(),
-        headers={
-            'Title': f'Rain tomorrow in {PLACE}',
-            'Priority': 'default',
-            'Click': f'https://forecast.weather.gov/MapClick.php?lat={LAT}&lon={LON}',
-        },
-    )
+    try:
+        resp = requests.post(
+            f'https://ntfy.sh/{NTFY_TOPIC}',
+            data=message.encode(),
+            headers={
+                'Title': f'Rain tomorrow in {PLACE}',
+                'Priority': 'default',
+                'Click': f'https://forecast.weather.gov/MapClick.php?lat={LAT}&lon={LON}',
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"ntfy error: {e}")
+        return False
 
 
 def main():
@@ -75,10 +82,12 @@ def main():
 
     already_alerted = forecast['date'] in state.get('alerted_dates', [])
     if prob >= THRESHOLD and not already_alerted:
-        notify(forecast)
-        state['alerted_dates'] = state.get('alerted_dates', [])[-29:] + [forecast['date']]
-        save_state(state)
-        print(f"Alerted: {prob}% >= {THRESHOLD}%")
+        if notify(forecast):
+            state['alerted_dates'] = state.get('alerted_dates', [])[-29:] + [forecast['date']]
+            save_state(state)
+            print(f"Alerted: {prob}% >= {THRESHOLD}%")
+        else:
+            print("Notification failed, will retry next run")
     else:
         print(f"No alert (threshold {THRESHOLD}%, already alerted: {already_alerted})")
 
